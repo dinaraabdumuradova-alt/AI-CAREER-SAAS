@@ -1,0 +1,86 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: ai-career-db
+    environment:
+      POSTGRES_USER: ${DB_USER:-career_user}
+      POSTGRES_PASSWORD: ${DB_PASSWORD:-career_password}
+      POSTGRES_DB: ${DB_NAME:-ai_career_db}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER:-career_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - ai-career-network
+
+  backend:
+    build:
+      context: ./apps/server
+      dockerfile: Dockerfile
+    container_name: ai-career-backend
+    environment:
+      NODE_ENV: development
+      PORT: 3001
+      DATABASE_URL: postgresql://${DB_USER:-career_user}:${DB_PASSWORD:-career_password}@postgres:5432/${DB_NAME:-ai_career_db}
+      JWT_SECRET: ${JWT_SECRET:-your-super-secret-jwt-key-change-in-production}
+    ports:
+      - "3001:3001"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./apps/server:/app
+      - /app/node_modules
+    networks:
+      - ai-career-network
+
+  frontend:
+    build:
+      context: ./apps/web
+      dockerfile: Dockerfile
+    container_name: ai-career-frontend
+    environment:
+      NEXT_PUBLIC_API_URL: http://localhost:3001
+      NEXT_PUBLIC_AI_SERVICE_URL: http://localhost:8000
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+    volumes:
+      - ./apps/web:/app
+      - /app/node_modules
+    networks:
+      - ai-career-network
+
+  ai-service:
+    build:
+      context: ./apps/ai-service
+      dockerfile: Dockerfile
+    container_name: ai-career-service
+    environment:
+      FASTAPI_ENV: development
+      PORT: 8000
+      BACKEND_URL: http://backend:3001
+    ports:
+      - "8000:8000"
+    depends_on:
+      - backend
+    volumes:
+      - ./apps/ai-service:/app
+    networks:
+      - ai-career-network
+
+volumes:
+  postgres_data:
+    driver: local
+
+networks:
+  ai-career-network:
+    driver: bridge
